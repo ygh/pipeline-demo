@@ -1,0 +1,159 @@
+pipeline {
+    agent {
+	   node { 
+	     label 'haimaxy-jnlp'
+	   }
+    }
+	environment {
+        def START_TIME = sh(script: "echo `date +%F' '%T`", returnStdout: true).trim()
+    }
+    stages {
+        stage('获取代码'){
+            steps {
+                echo '获取代码'
+				git 'https://github.com/ygh/spring-boot-shopping-cart.git'
+            }
+            post {
+                success {
+                    dingtalk (
+                        robot: '9a873272-4ab7-41db-aeaa-1313c3c6abef',
+                        type: 'TEXT',
+                        text: [
+						    '============【jenkins】============',
+							'服务名称：${JOB_BASE_NAME}',
+							'启动时间: ${START_TIME}',
+                            '构建URL: ${BUILD_URL}',
+                            'JENKINS节点: ${NODE_NAME}',
+							'构建标签: ${BUILD_TAG}',
+							'第 ${BUILD_NUMBER} 次构建',
+							'拉取github仓库代码成功'
+							
+                        ]
+                        //at: [
+                        //    '手机号码'
+                        //]
+                    )
+                }
+            }
+        }
+        stage('代码测试'){
+		    environment {
+			    def TEST_TIME = sh(script: "echo `date +%F' '%T`", returnStdout: true).trim()
+            }
+			
+            steps {
+                echo '代码测试'
+            }
+            post {
+                success {
+                    dingtalk (
+                        robot: '9a873272-4ab7-41db-aeaa-1313c3c6abef',
+                        type: 'TEXT',
+                        text: [
+						    '============【jenkins】============',
+						    '服务名称: ${JOB_BASE_NAME}',
+							'测试时间: ${TEST_TIME}',
+                            '测试状态: 正常'							
+                        ]
+                        //at: [
+                        //    '手机号码'
+                        //]
+                    )
+                }
+            }
+        }
+        stage('编译代码'){
+		    environment {
+			    def BUILD_TIME = sh(script: "echo `date +%F' '%T`", returnStdout: true).trim()
+			}
+            steps {
+                echo '编译代码'
+				
+				sh 'mvn clean package -DskipTests'
+	            sh "docker build -t yigongzi/spring-boot-shopping-cart:${BUILD_ID} -f docker/Dockerfile ."
+            }
+            post {
+                success {
+                    dingtalk (
+                        robot: '9a873272-4ab7-41db-aeaa-1313c3c6abef',
+                        type: 'TEXT',
+                        text: [
+						    '============【jenkins】============',
+							'服务名称：${JOB_BASE_NAME}',						    
+							'编译时间: ${BUILD_TIME}'	,
+							'编译状态: 正常',
+							'docker镜像构建：制作成功'
+                        ]
+                        //at: [
+                        //    '手机号码'
+                        //]
+                    )
+                }
+            }
+        }
+        stage('推送镜像'){
+		    environment {
+			    def PUSH_TIME = sh(script: "echo `date +%F' '%T`", returnStdout: true).trim()
+			}
+            steps {
+                echo '推送镜像'
+				script {
+                    withCredentials([usernamePassword(credentialsId: 'dockerHub', passwordVariable: 'dockerHubPassword', usernameVariable: 'dockerHubUser')]) {
+                      sh "docker login -u ${dockerHubUser} -p ${dockerHubPassword}"
+                      sh "docker push yigongzi/spring-boot-shopping-cart:${BUILD_ID}"
+	                }
+                }
+            }
+            post {
+                success {
+                    dingtalk (
+                        robot: '9a873272-4ab7-41db-aeaa-1313c3c6abef',
+                        type: 'TEXT',
+                        text: [
+						    '============【jenkins】============',
+							'服务名称：${JOB_BASE_NAME}',			
+							'推送时间: ${PUSH_TIME}',	
+			                '推送状态：成功'
+                        ]
+                        //at: [
+                        //    '手机号码'
+                        //]
+                    )
+                }
+            }
+        }
+        stage('部署服务'){
+		    environment {
+			    def DEPLOY_TIME = sh(script: "echo `date +%F' '%T`", returnStdout: true).trim()
+			}
+            steps {
+                echo '部署服务到k8s集群'
+				script {
+				    if (env.BRANCH_NAME == 'master') {
+                        input "确认要部署线上环境吗？"
+                    }
+                    sh "sed -i 's/<BUILD_TAG>/${BUILD_ID}/' k8s.yaml"
+                    sh 'kubectl apply -f  k8s.yaml --record'
+				}
+            }
+            post {
+                success {
+                    dingtalk (
+                        robot: '9a873272-4ab7-41db-aeaa-1313c3c6abef',
+                        type: 'TEXT',
+                        text: [
+						    '============【jenkins】============',
+							'服务名称：${JOB_BASE_NAME}',
+							'部署时间: ${DEPLOY_TIME}',	
+							'部署状态：成功'
+                        ]
+                        //at: [
+                        //    '手机号码'
+                        //]
+                    )
+                }
+            }
+        }
+		
+    }
+}
